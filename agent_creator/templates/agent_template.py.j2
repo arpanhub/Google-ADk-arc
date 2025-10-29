@@ -1,0 +1,27 @@
+from google.adk.agents import Agent
+from typing import Optional, Dict, Any
+
+{% for tool in tools %}
+def {{ tool.name }}({{ tool.parameters }}) -> {{ tool.return_type }}:
+    """{{ tool.description }}
+    
+    Args:
+{% for param in tool.params_list %}
+        {{ param.name }} ({{ param.type }}): {{ param.description }}
+{% endfor %}
+    
+    Returns:
+        {{ tool.return_type }}: {{ tool.return_description }}
+    """
+    # TODO: Implement {{ tool.name }}
+    return {{ tool.default_return }}
+
+{% endfor %}
+
+root_agent = Agent(
+    name="{{ agent_name }}",
+    model="{{ model }}",
+    description="{{ description }}",
+    instruction="{{ instruction }}",
+    tools=[{{ tool_names }}],
+)
