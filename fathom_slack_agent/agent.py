@@ -1,0 +1,116 @@
+from google.adk.agents import Agent
+from typing import Dict, List, Optional
+import json
+
+def parse_fathom_data(fathom_data: str) -> Dict:
+    """Parses Fathom meeting data (as a JSON string) to extract key information.
+
+    Args:
+        fathom_data (str): A JSON string containing Fathom meeting data.
+
+    Returns:
+        Dict: A dictionary containing parsed information, including 'things_discussed' and 'key_actions'.
+    """
+    try:
+        data = json.loads(fathom_data)
+        things_discussed = data.get("things_discussed", [])
+        key_actions = data.get("key_actions", [])
+        return {"status": "success", "result": {"things_discussed": things_discussed, "key_actions": key_actions}}
+    except Exception as e:
+        return {"status": "error", "result": f"Failed to parse Fathom data: {str(e)}"}
+
+def create_or_update_slack_canvas(channel_id: str, content: str, canvas_id: Optional[str] = None) -> Dict:
+    """Creates a new Slack canvas or updates an existing one with the provided content.
+
+    Args:
+        channel_id (str): The ID of the Slack channel.
+        content (str): The content to add to the Slack canvas.
+        canvas_id (Optional[str]): The ID of the existing canvas to update (optional).
+
+    Returns:
+        Dict: A dictionary containing the status and the ID of the canvas.
+    """
+    try:
+        if canvas_id:
+            # Mock update canvas logic
+            print(f"Updating Slack canvas {canvas_id} in channel {channel_id} with content: {content}")
+            return {"status": "success", "result": f"Canvas {canvas_id} updated successfully."}
+        else:
+            # Mock create canvas logic
+            new_canvas_id = "canvas_" + channel_id + "_123"  # Mock canvas ID
+            print(f"Creating new Slack canvas in channel {channel_id} with content: {content}")
+            return {"status": "success", "result": f"New canvas created with ID: {new_canvas_id}"}
+    except Exception as e:
+        return {"status": "error", "result": f"Failed to create/update Slack canvas: {str(e)}"}
+
+def set_reminders_for_actions(key_actions: str) -> Dict:
+    """Sets reminders for action item owners in Slack.
+
+    Args:
+        key_actions (str): A JSON string representing a list of dictionaries, where each dictionary represents an action item with 'owner' and 'due_date'.
+
+    Returns:
+        Dict: A dictionary containing the status and a summary of reminders set.
+    """
+    try:
+        key_actions_list = json.loads(key_actions)
+        reminder_summary = []
+        for action in key_actions_list:
+            owner = action.get("owner")
+            due_date = action.get("due_date")
+            task = action.get("task")
+            if owner and due_date and task:
+                # Mock reminder setting logic
+                print(f"Setting reminder for {owner} to complete '{task}' by {due_date}")
+                reminder_summary.append(f"Reminder set for {owner} for task '{task}' by {due_date}")
+            else:
+                reminder_summary.append(f"Skipping reminder for action: {action}. Missing owner, due_date, or task.")
+        return {"status": "success", "result": reminder_summary}
+    except Exception as e:
+        return {"status": "error", "result": f"Failed to set reminders: {str(e)}"}
+
+def post_summary_message(channel_id: str, message: str) -> Dict:
+    """Posts a summary message to the specified Slack channel.
+
+    Args:
+        channel_id (str): The ID of the Slack channel.
+        message (str): The message to post.
+
+    Returns:
+        Dict: A dictionary containing the status of the message posting.
+    """
+    try:
+        # Mock message posting logic
+        print(f"Posting message to channel {channel_id}: {message}")
+        return {"status": "success", "result": "Message posted successfully."}
+    except Exception as e:
+        return {"status": "error", "result": f"Failed to post message: {str(e)}"}
+
+def validate_fathom_payload(fathom_data: str) -> Dict:
+    """Validates the Fathom payload (as a JSON string) to ensure it contains the necessary information.
+
+    Args:
+        fathom_data (str): The Fathom payload to validate (as a JSON string).
+
+    Returns:
+        Dict: A dictionary containing the validation status and any error messages.
+    """
+    try:
+        data = json.loads(fathom_data)
+        if not isinstance(data, dict):
+            return {"status": "error", "result": "Fathom data must be a dictionary."}
+        if "things_discussed" not in data or "key_actions" not in data:
+            return {"status": "error", "result": "Fathom data must contain 'things_discussed' and 'key_actions'."}
+        return {"status": "success", "result": "Fathom payload is valid."}
+    except json.JSONDecodeError:
+        return {"status": "error", "result": "Invalid JSON format."}
+    except Exception as e:
+        return {"status": "error", "result": f"An unexpected error occurred: {str(e)}"}
+
+root_agent = Agent(
+    name="fathom_slack_agent",
+    model="gemini-2.0-flash",
+    description="Processes Fathom call data and automatically creates/updates Slack Canvases with meeting summaries and action items, then sets reminders for task owners.",
+    instruction="When a user provides Fathom meeting data:\n1. Parse the 'things discussed' and 'key actions' from Fathom\n2. Create or update a Slack Canvas in the specified channel\n3. Format content with proper sections\n4. Set reminders for action item owners\n5. Post confirmation message\n\nAlways use data exactly as provided - do not modify or interpret content.",
+    tools=[parse_fathom_data, create_or_update_slack_canvas, set_reminders_for_actions, post_summary_message, validate_fathom_payload]
+)

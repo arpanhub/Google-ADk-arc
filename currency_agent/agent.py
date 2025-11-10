@@ -1,75 +1,69 @@
 from google.adk.agents import Agent
 from typing import Optional
-import json
 
-def convert_currency(amount: str, from_currency: str, to_currency: str) -> dict:
+def convert_currency(from_currency: str, to_currency: str, amount: float) -> dict:
     """Converts an amount from one currency to another.
 
     Args:
-        amount (str): The amount to convert.
-        from_currency (str): The currency to convert from.
-        to_currency (str): The currency to convert to.
+        from_currency (str): The currency to convert from (e.g., USD).
+        to_currency (str): The currency to convert to (e.g., EUR).
+        amount (float): The amount to convert.
 
     Returns:
         dict: A dictionary containing the status and the converted amount.
+              Example: {"status": "success", "result": 92.65}
     """
     try:
-        amount_float = float(amount)
-    except ValueError:
-        return {"status": "error", "result": "Invalid amount. Please provide a numeric value."}
+        # Mock exchange rates (replace with actual API calls in production)
+        exchange_rates = {
+            "USD": {"EUR": 0.92, "GBP": 0.80, "JPY": 150.00},
+            "EUR": {"USD": 1.09, "GBP": 0.87, "JPY": 163.00},
+            "GBP": {"USD": 1.25, "EUR": 1.15, "JPY": 188.00},
+            "JPY": {"USD": 0.0067, "EUR": 0.0061, "GBP": 0.0053}
+        }
 
-    # Mock conversion logic (replace with actual API call)
-    exchange_rates = {
-        "USD_EUR": 0.92,
-        "EUR_USD": 1.09,
-        "USD_GBP": 0.79,
-        "GBP_USD": 1.27,
-        "EUR_GBP": 0.86,
-        "GBP_EUR": 1.16,
-    }
+        if from_currency not in exchange_rates or to_currency not in exchange_rates[from_currency]:
+            return {"status": "error", "result": "Invalid currency pair."}
 
-    currency_pair = f"{from_currency}_{to_currency}"
-    reverse_currency_pair = f"{to_currency}_{from_currency}"
+        exchange_rate = exchange_rates[from_currency][to_currency]
+        converted_amount = amount * exchange_rate
+        return {"status": "success", "result": round(converted_amount, 2)}
 
-    if currency_pair in exchange_rates:
-        rate = exchange_rates[currency_pair]
-        converted_amount = amount_float * rate
-        return {"status": "success", "result": f"{amount} {from_currency} is equal to {converted_amount:.2f} {to_currency}"}
-    elif reverse_currency_pair in exchange_rates:
-        rate = exchange_rates[reverse_currency_pair]
-        converted_amount = amount_float / rate
-        return {"status": "success", "result": f"{amount} {from_currency} is equal to {converted_amount:.2f} {to_currency}"}
-    else:
-        return {"status": "error", "result": "Currency pair not supported."}
+    except Exception as e:
+        return {"status": "error", "result": str(e)}
 
 
-def get_exchange_rate(currency_pair: str) -> dict:
-    """Gets the current exchange rate between two currencies.
+def get_exchange_rate(from_currency: str, to_currency: str) -> dict:
+    """Retrieves the exchange rate between two currencies.
 
     Args:
-        currency_pair (str): The currency pair (e.g., "USD_EUR").
+        from_currency (str): The currency to convert from (e.g., USD).
+        to_currency (str): The currency to convert to (e.g., EUR).
 
     Returns:
         dict: A dictionary containing the status and the exchange rate.
+              Example: {"status": "success", "result": 0.92}
     """
-    # Mock exchange rate data (replace with actual API call)
-    exchange_rates = {
-        "USD_EUR": 0.92,
-        "EUR_USD": 1.09,
-        "USD_GBP": 0.79,
-        "GBP_USD": 1.27,
-        "EUR_GBP": 0.86,
-        "GBP_EUR": 1.16,
-    }
+    try:
+        # Mock exchange rates (replace with actual API calls in production)
+        exchange_rates = {
+            "USD": {"EUR": 0.92, "GBP": 0.80, "JPY": 150.00},
+            "EUR": {"USD": 1.09, "GBP": 0.87, "JPY": 163.00},
+            "GBP": {"USD": 1.25, "EUR": 1.15, "JPY": 188.00},
+            "JPY": {"USD": 0.0067, "EUR": 0.0061, "GBP": 0.0053}
+        }
 
-    if currency_pair in exchange_rates:
-        rate = exchange_rates[currency_pair]
-        return {"status": "success", "result": f"The exchange rate for {currency_pair} is {rate}"}
-    else:
-        return {"status": "error", "result": "Currency pair not supported."}
+        if from_currency not in exchange_rates or to_currency not in exchange_rates[from_currency]:
+            return {"status": "error", "result": "Invalid currency pair."}
+
+        exchange_rate = exchange_rates[from_currency][to_currency]
+        return {"status": "success", "result": exchange_rate}
+
+    except Exception as e:
+        return {"status": "error", "result": str(e)}
 
 
-currency_agent = Agent(
+root_agent = Agent(
     name="currency_agent",
     model="gemini-2.0-flash",
     description="A currency converter agent that converts between different currencies and provides exchange rates.",
