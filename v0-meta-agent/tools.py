@@ -3,43 +3,59 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-#state managment for requirements collection
+# Import code writer agent
+try:
+    from .code_writer_agent.agent import (
+        write_tool_implementation,
+        validate_generated_code,
+        infer_parameters_heuristic
+    )
+    CODE_WRITER_AVAILABLE = True
+except ImportError:
+    CODE_WRITER_AVAILABLE = False
+    print("⚠️  Code Writer Agent not available - will use skeleton templates")
+
+
+# State management for requirements collection
 _requirements_state = {
     "active": False,
-    "agent_spec":{},
-    "env_data":{},
-    "package":{},
-    "config":{}
+    "agent_spec": {},
+    "env_data": {},
+    "packages": [],  
+    "config": {}
 }
 
-def get_root_directory()->Path:
-    """get the root dir where agent will born"""
-    current_file_path = Path(__file__).resolve()
-    root_directory = current_file_path.parent.parent
-    return root_directory
 
-def start_requirements_collection(agent_spec:Dict[str, Any], env_data:Dict[str, Any], package:Dict[str, Any], config:Dict[str, Any]) -> None:
-    """Start the requirements collection process."""
+def get_root_directory() -> Path:
+    """Get the root directory where agents should be created."""
+    current_file = Path(__file__).resolve()
+    # Navigate up to getting_started directory
+    root = current_file.parent.parent
+    return root
+
+
+def start_requirements_collection() -> dict:  # Fixed: removed parameters
+    """Start guided agent creation process with requirements collection."""
     global _requirements_state
-    _requirements_state ={
+    _requirements_state = {
         "active": True,
-        "agent_spec":{
-            "agent_name":None,
-            "description":None,
-            "instruction":None,
-            "tool_descriptions":None,
-            "model":"gemini-2.0-flash"
+        "agent_spec": {
+            "agent_name": None,
+            "description": None,
+            "instruction": None,
+            "tools_description": None,
+            "model": "gemini-2.0-flash"
         },
-        "env_data":{},
-        "package":{},
-        "config":{}
-
+        "env_data": {},
+        "packages": [],
+        "config": {}
     }
-
+    
     return {
-        "status":"success",
-        "message":"Requirements collection started.Please provide: agent_name, description, instruction, tools_description"
+        "status": "success",
+        "message": "Requirements collection started. Please provide: agent_name, description, instruction, tools_description"
     }
+
 
 def add_basic_requirement(field_name: str, field_value: str) -> dict:
     """Set basic agent information."""
@@ -61,7 +77,6 @@ def add_basic_requirement(field_name: str, field_value: str) -> dict:
     }
 
 
-
 def add_api_key_requirement(service_name: str, key_placeholder: str, description: str = "") -> dict:
     """Add API key requirement for external services."""
     global _requirements_state
@@ -78,6 +93,7 @@ def add_api_key_requirement(service_name: str, key_placeholder: str, description
         "status": "success",
         "message": f"Added API key requirement: {service_name}"
     }
+
 
 def add_package_dependency(package_name: str, version: str = "", purpose: str = "") -> dict:
     """Add external Python package dependency."""
@@ -97,6 +113,7 @@ def add_package_dependency(package_name: str, version: str = "", purpose: str = 
         "status": "success",
         "message": f"Added package: {package_spec}"
     }
+
 
 def get_requirements_status() -> dict:
     """Check current progress of requirements collection."""
@@ -123,72 +140,210 @@ def get_requirements_status() -> dict:
         "ready_to_create": len(missing) == 0
     }
 
-def generate_init_file()->str:
-    """Generate the __init__.py file content."""
-    return """from .agent import root_agent
-    __all__ = ["root_agent"]
-    """
 
 def parse_tools_from_description(tools_description: str) -> list:
     """Parse tool descriptions and generate tool function stubs."""
     tools = []
+    
     # Split by common separators
     tool_lines = [line.strip() for line in tools_description.split(',') if line.strip()]
     
     for tool_desc in tool_lines:
         # Extract tool name (first word or before colon/dash)
-        tool_name = tool_desc.split(':')[0].split('-')[0].strip()
+        if ':' in tool_desc:
+            parts = tool_desc.split(':', 1)
+            tool_name = parts[0].strip()
+            description = parts[1].strip() if len(parts) > 1 else tool_desc
+        elif '-' in tool_desc:
+            parts = tool_desc.split('-', 1)
+            tool_name = parts[0].strip()
+            description = parts[1].strip() if len(parts) > 1 else tool_desc
+        else:
+            tool_name = tool_desc.strip()
+            description = tool_desc
+        
         tool_name = tool_name.replace(' ', '_').lower()
         
         # Clean up non-alphanumeric except underscore
         tool_name = ''.join(c for c in tool_name if c.isalnum() or c == '_')
         
+        # Ensure doesn't start with number
+        if tool_name and tool_name[0].isdigit():
+            tool_name = 'tool_' + tool_name
+        
         if tool_name:
             tools.append({
                 "name": tool_name,
-                "description": tool_desc
+                "description": description
             })
     
     return tools
 
-def generate_agent_code(spec: dict) -> str:
-    """Generate the agent.py file content."""
+
+def generate_init_file() -> str:
+    """Generate the __init__.py file content."""
+    return """from .agent import root_agent
+
+__all__ = ["root_agent"]
+"""
+
+
+def generate_fallback_skeleton_simple(tool_name: str, description: str) -> str:
+    """Simple fallback skeleton."""
+    return f'''def {tool_name}(input_data: str) -> dict:
+    """
+    {description}
+    
+    Args:
+        input_data (str): Input parameter
+    
+    Returns:
+        dict: Result of {tool_name}
+    """
+    # TODO: Implement {tool_name}
+    return {{"status": "not_implemented", "message": "TODO: Implementation needed"}}
+'''
+
+
+def generate_tool_with_openai(
+    tool_name: str,
+    tool_description: str,
+    agent_context: dict
+) -> dict:
+    """
+    Generate a complete tool implementation using OpenAI Code Writer.
+    
+    Args:
+        tool_name: Name of the tool function
+        tool_description: What the tool should do
+        agent_context: Context about the agent being built
+    
+    Returns:
+        dict: Generated code and metadata
+    """
+    if not CODE_WRITER_AVAILABLE:
+        return {
+            "status": "error",
+            "message": "Code Writer not available",
+            "code": generate_fallback_skeleton_simple(tool_name, tool_description)
+        }
+    
+    # Infer parameters
+    params = infer_parameters_heuristic(tool_name, tool_description)
+    
+    # Build context string
+    context_parts = []
+    if agent_context.get("packages"):
+        pkgs = [p.get('package', '') for p in agent_context['packages']]
+        context_parts.append(f"Required packages: {', '.join(pkgs)}")
+    if agent_context.get("api_keys"):
+        context_parts.append(f"Available API keys (from env): {', '.join(agent_context['api_keys'])}")
+    if agent_context.get("description"):
+        context_parts.append(f"Agent purpose: {agent_context['description']}")
+    
+    context_str = "\n".join(context_parts)
+    
+    # Generate code
+    result = write_tool_implementation(
+        tool_name=tool_name,
+        tool_description=tool_description,
+        input_parameters=json.dumps(params),
+        expected_output="dict with success status and result data",
+        context=context_str
+    )
+    
+    if result["status"] == "success":
+        # Validate generated code
+        validation = validate_generated_code(result["code"])
+        if validation["valid"]:
+            return {
+                "status": "success",
+                "code": result["code"],
+                "source": "openai",
+                "tokens": result.get("tokens_used", 0)
+            }
+        else:
+            print(f"⚠️  Generated code invalid: {validation['error']}")
+            return {
+                "status": "fallback",
+                "code": result.get("fallback_code", generate_fallback_skeleton_simple(tool_name, tool_description)),
+                "source": "fallback",
+                "error": validation["error"]
+            }
+    else:
+        return {
+            "status": "fallback",
+            "code": result.get("fallback_code", generate_fallback_skeleton_simple(tool_name, tool_description)),
+            "source": "fallback",
+            "error": result.get("message", "Unknown error")
+        }
+
+
+def generate_agent_code_with_openai(spec: dict) -> str:
+    """
+    Enhanced agent code generation using OpenAI for tool implementations.
+    """
     tools = parse_tools_from_description(spec["tools_description"])
     
-    # Generate tool functions
     tool_functions = []
     tool_names = []
+    imports = set(["from google.adk.agents import Agent", "from typing import Optional, Dict, Any"])
     
-    for tool in tools:
+    agent_context = {
+        "agent_name": spec.get("agent_name"),
+        "description": spec.get("description"),
+        "packages": _requirements_state.get("packages", []),
+        "api_keys": list(_requirements_state.get("env_data", {}).keys())
+    }
+    
+    print(f"\n🤖 Generating {len(tools)} tools using OpenAI Code Writer...\n")
+    
+    for i, tool in enumerate(tools, 1):
         func_name = tool["name"]
         tool_names.append(func_name)
         
-        tool_func = f'''def {func_name}(input_data: str) -> str:
-    """{tool["description"]}
+        print(f"  [{i}/{len(tools)}] ⏳ Generating: {func_name}...")
+        
+        # Call OpenAI to generate implementation
+        result = generate_tool_with_openai(
+            tool_name=func_name,
+            tool_description=tool["description"],
+            agent_context=agent_context
+        )
+        
+        if result["status"] == "success":
+            code = result["code"]
+            tool_functions.append(code)
+            
+            # Extract imports from generated code
+            for line in code.split('\n'):
+                line_stripped = line.strip()
+                if line_stripped.startswith('import ') or line_stripped.startswith('from '):
+                    imports.add(line_stripped)
+            
+            print(f"  [{i}/{len(tools)}] ✅ Generated: {func_name} (OpenAI, {result.get('tokens', 0)} tokens)")
+        else:
+            # Fallback to skeleton
+            code = result["code"]
+            tool_functions.append(code)
+            print(f"  [{i}/{len(tools)}] ⚠️  Fallback skeleton: {func_name}")
     
-    Args:
-        input_data (str): Input parameter for {func_name}
-    
-    Returns:
-        str: Result of {func_name}
-    """
-    # TODO: Implement {func_name}
-    return ""
-'''
-        tool_functions.append(tool_func)
+    print("\n✨ Code generation complete!\n")
     
     # Generate full agent file
-    agent_code = f'''from google.adk.agents import Agent
-from typing import Optional, Dict, Any
+    imports_section = '\n'.join(sorted(imports))
+    
+    agent_code = f'''{imports_section}
 
 
 {chr(10).join(tool_functions)}
+
 
 root_agent = Agent(
     name="{spec["agent_name"]}",
     model="{spec.get("model", "gemini-2.0-flash")}",
     description="{spec["description"]}",
-    instruction="{spec["instruction"]}",
+    instruction="""{spec["instruction"]}""",
     tools=[{", ".join(tool_names)}],
 )
 '''
@@ -221,8 +376,9 @@ def generate_requirements_file(packages: list) -> str:
     
     return '\n'.join(lines)
 
+
 def create_agent_from_requirements() -> dict:
-    """Finalize requirements and create the agent."""
+    """Finalize requirements and create the agent with OpenAI-generated code."""
     global _requirements_state
     
     if not _requirements_state["active"]:
@@ -255,9 +411,9 @@ def create_agent_from_requirements() -> dict:
         init_content = generate_init_file()
         init_file = agent_dir / "__init__.py"
         init_file.write_text(init_content)
-
-        # Generate and write agent.py
-        agent_code = generate_agent_code(spec)
+        
+        # Generate agent.py with OpenAI
+        agent_code = generate_agent_code_with_openai(spec)
         agent_file = agent_dir / "agent.py"
         agent_file.write_text(agent_code)
         
@@ -277,13 +433,14 @@ def create_agent_from_requirements() -> dict:
         
         return {
             "status": "success",
-            "message": f"Agent '{spec['agent_name']}' created successfully at {agent_dir}",
+            "message": f"✅ Agent '{spec['agent_name']}' created successfully with OpenAI-generated code!",
             "agent_directory": str(agent_dir),
             "files_created": ["__init__.py", "agent.py", ".env"] + (["requirements.txt"] if _requirements_state["packages"] else []),
             "next_steps": [
                 "1. Update API keys in .env file",
-                "2. Implement TODO sections in agent.py",
-                f"3. Run 'adk web' and select '{spec['agent_name']}' from dropdown"
+                "2. Review generated implementations in agent.py",
+                "3. Install dependencies: pip install -r requirements.txt (if exists)",
+                f"4. Run 'adk web' and select '{spec['agent_name']}' from dropdown"
             ]
         }
         
@@ -334,4 +491,3 @@ def view_agent_code(agent_name: str) -> dict:
         "agent_name": agent_name,
         "code": code
     }
-
