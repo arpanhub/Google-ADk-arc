@@ -1,19 +1,10 @@
+import os
+import requests
+from typing import Dict, Any
 from bs4 import BeautifulSoup
-from google.adk.agents import Agent
 from requests.exceptions import HTTPError, RequestException
-from requests.exceptions import RequestException
 from transformers import pipeline, Pipeline
-from typing import Dict
-from typing import Dict, Any
-from typing import Optional, Dict, Any
-import os
-import requests
-
-
-import os
-import requests
-from typing import Dict, Any
-from bs4 import BeautifulSoup
+from google.adk.agents import Agent
 
 def fetch_tech_news(resource_id: str, options: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -79,11 +70,6 @@ def fetch_tech_news(resource_id: str, options: Dict[str, Any]) -> Dict[str, Any]
     except Exception as e:
         # Handle other exceptions
         return {'success': False, 'error': str(e)}
-import os
-import requests
-from typing import Dict, Any
-from transformers import pipeline, Pipeline
-from requests.exceptions import HTTPError, RequestException
 
 def summarize_news(resource_id: str, options: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -154,10 +140,6 @@ def summarize_news(resource_id: str, options: Dict[str, Any]) -> Dict[str, Any]:
         response["error"] = f"An unexpected error occurred: {err}"
 
     return response
-import os
-import requests
-from typing import Dict, Any
-from requests.exceptions import RequestException
 
 def respond_to_user(input_data: str) -> Dict[str, Any]:
     """
@@ -218,9 +200,6 @@ def respond_to_user(input_data: str) -> Dict[str, Any]:
     except Exception as e:
         # Handle any other unforeseen errors
         return {"success": False, "error": f"An error occurred: {str(e)}"}
-import os
-import requests
-from typing import Dict
 
 def introduce_self(input_data: str) -> Dict[str, str]:
     """

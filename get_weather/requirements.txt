@@ -1,0 +1,3 @@
+google-adk
+# HTTP requests to weather API
+requests>=2.31.0

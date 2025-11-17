@@ -1,5 +1,7 @@
 import os
 import json
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -21,7 +23,7 @@ _requirements_state = {
     "active": False,
     "agent_spec": {},
     "env_data": {},
-    "packages": [],  
+    "packages": [],
     "config": {}
 }
 
@@ -34,7 +36,7 @@ def get_root_directory() -> Path:
     return root
 
 
-def start_requirements_collection() -> dict:  # Fixed: removed parameters
+def start_requirements_collection() -> dict:
     """Start guided agent creation process with requirements collection."""
     global _requirements_state
     _requirements_state = {
@@ -77,43 +79,71 @@ def add_basic_requirement(field_name: str, field_value: str) -> dict:
     }
 
 
-def add_api_key_requirement(service_name: str, key_placeholder: str, description: str = "") -> dict:
-    """Add API key requirement for external services."""
+def add_api_key_requirement(
+    service_name: str, 
+    key_value: str,
+    description: str,
+    api_endpoint: str
+) -> dict:
+    """
+    Add API key requirement for external services with actual key value and endpoint.
+    
+    Args:
+        service_name: Name of the API key environment variable (e.g., "WEATHER_API_KEY")
+        key_value: Actual API key value provided by user
+        description: Description of what this API key is for
+        api_endpoint: The API endpoint URL (with {{placeholders}} for dynamic values)
+    
+    Returns:
+        dict: Status of the operation
+    """
     global _requirements_state
     
     if not _requirements_state["active"]:
         return {"status": "error", "message": "Requirements collection not started."}
     
     _requirements_state["env_data"][service_name] = {
-        "value": key_placeholder,
-        "description": description
+        "value": key_value,  # Store actual value, not placeholder
+        "description": description if description else "",
+        "api_endpoint": api_endpoint if api_endpoint else ""  # Store endpoint info
     }
     
     return {
         "status": "success",
-        "message": f"Added API key requirement: {service_name}"
+        "message": f"Added API key: {service_name} with endpoint information",
+        "endpoint_captured": bool(api_endpoint)
     }
 
-
-def add_package_dependency(package_name: str, version: str = "", purpose: str = "") -> dict:
-    """Add external Python package dependency."""
+def add_package_dependency(generate_tool_with_openaipackage_name: str, version: str, purpose: str) -> dict:
+    """
+    Add external Python package dependency.
+    
+    Args:
+        package_name: Name of the package (e.g., "requests")
+        version: Version specification (e.g., ">=2.31.0" or empty string for latest)
+        purpose: Why this package is needed
+    
+    Returns:
+        dict: Status of the operation
+    """
     global _requirements_state
     
     if not _requirements_state["active"]:
         return {"status": "error", "message": "Requirements collection not started."}
     
-    package_spec = f"{package_name}{version}" if version else package_name
+    # Handle empty version string
+    version_str = version if version and version.strip() else ""
+    package_spec = f"{package_name}{version_str}" if version_str else package_name
     
     _requirements_state["packages"].append({
         "package": package_spec,
-        "purpose": purpose
+        "purpose": purpose if purpose else ""
     })
     
     return {
         "status": "success",
         "message": f"Added package: {package_spec}"
     }
-
 
 def get_requirements_status() -> dict:
     """Check current progress of requirements collection."""
@@ -204,7 +234,6 @@ def generate_fallback_skeleton_simple(tool_name: str, description: str) -> str:
     return {{"status": "not_implemented", "message": "TODO: Implementation needed"}}
 '''
 
-
 def generate_tool_with_openai(
     tool_name: str,
     tool_description: str,
@@ -231,19 +260,30 @@ def generate_tool_with_openai(
     # Infer parameters
     params = infer_parameters_heuristic(tool_name, tool_description)
     
-    # Build context string
+    # Build enhanced context string with API endpoints
     context_parts = []
+    
     if agent_context.get("packages"):
         pkgs = [p.get('package', '') for p in agent_context['packages']]
         context_parts.append(f"Required packages: {', '.join(pkgs)}")
+    
     if agent_context.get("api_keys"):
         context_parts.append(f"Available API keys (from env): {', '.join(agent_context['api_keys'])}")
+    
+    # ✨ NEW: Add API endpoint information
+    if agent_context.get("env_data"):
+        context_parts.append("\nAPI Endpoint Information:")
+        for key_name, key_info in agent_context["env_data"].items():
+            if key_info.get("api_endpoint"):
+                context_parts.append(f"- {key_name}: {key_info['api_endpoint']}")
+                context_parts.append(f"  Description: {key_info.get('description', 'N/A')}")
+    
     if agent_context.get("description"):
-        context_parts.append(f"Agent purpose: {agent_context['description']}")
+        context_parts.append(f"\nAgent purpose: {agent_context['description']}")
     
     context_str = "\n".join(context_parts)
     
-    # Generate code
+    # Generate code with enhanced context
     result = write_tool_implementation(
         tool_name=tool_name,
         tool_description=tool_description,
@@ -278,7 +318,6 @@ def generate_tool_with_openai(
             "error": result.get("message", "Unknown error")
         }
 
-
 def generate_agent_code_with_openai(spec: dict) -> str:
     """
     Enhanced agent code generation using OpenAI for tool implementations.
@@ -289,11 +328,13 @@ def generate_agent_code_with_openai(spec: dict) -> str:
     tool_names = []
     imports = set(["from google.adk.agents import Agent", "from typing import Optional, Dict, Any"])
     
+    # ✨ ENHANCED: Include env_data with API endpoints
     agent_context = {
         "agent_name": spec.get("agent_name"),
         "description": spec.get("description"),
         "packages": _requirements_state.get("packages", []),
-        "api_keys": list(_requirements_state.get("env_data", {}).keys())
+        "api_keys": list(_requirements_state.get("env_data", {}).keys()),
+        "env_data": _requirements_state.get("env_data", {})  # ✨ NEW: Pass full env data including endpoints
     }
     
     print(f"\n🤖 Generating {len(tools)} tools using OpenAI Code Writer...\n")
@@ -350,19 +391,32 @@ root_agent = Agent(
     
     return agent_code
 
-
 def generate_env_file(env_data: dict) -> str:
-    """Generate .env file content."""
-    lines = ["GOOGLE_API_KEY=your_google_api_key_here"]
+    """
+    Generate .env file content with actual API key values.
+    
+    Args:
+        env_data: Dictionary of environment variables with values and descriptions
+    
+    Returns:
+        str: Complete .env file content with real values
+    """
+    lines = ["# Google ADK API Key", "GOOGLE_API_KEY=your_google_api_key_here", ""]
     
     for key, data in env_data.items():
-        comment = f"# {data['description']}" if data.get('description') else ""
-        if comment:
-            lines.append(comment)
+        # Add description as comment
+        if data.get('description'):
+            lines.append(f"# {data['description']}")
+        
+        # Add API endpoint as comment if available
+        if data.get('api_endpoint'):
+            lines.append(f"# API Endpoint: {data['api_endpoint']}")
+        
+        # Add actual key value (not placeholder!)
         lines.append(f"{key}={data['value']}")
+        lines.append("")  # Empty line for readability
     
     return '\n'.join(lines)
-
 
 def generate_requirements_file(packages: list) -> str:
     """Generate requirements.txt content."""
@@ -378,7 +432,7 @@ def generate_requirements_file(packages: list) -> str:
 
 
 def create_agent_from_requirements() -> dict:
-    """Finalize requirements and create the agent with OpenAI-generated code."""
+    """Finalize requirements and create the agent with OpenAI-generated code and auto-installed dependencies."""
     global _requirements_state
     
     if not _requirements_state["active"]:
@@ -417,31 +471,96 @@ def create_agent_from_requirements() -> dict:
         agent_file = agent_dir / "agent.py"
         agent_file.write_text(agent_code)
         
-        # Generate and write .env
+        # Generate and write .env with ACTUAL API key values
         env_content = generate_env_file(_requirements_state["env_data"])
         env_file = agent_dir / ".env"
         env_file.write_text(env_content)
         
         # Generate and write requirements.txt if packages exist
+        install_status = "not_needed"
+        install_message = "No additional dependencies required"
+        install_location = "N/A"
+        
         if _requirements_state["packages"]:
             req_content = generate_requirements_file(_requirements_state["packages"])
             req_file = agent_dir / "requirements.txt"
             req_file.write_text(req_content)
+            
+            # AUTO-INSTALL DEPENDENCIES
+            package_count = len(_requirements_state["packages"])
+            print(f"\n📦 Installing {package_count} package(s) to current Python environment...")
+            print(f"   Python: {sys.executable}")
+            print(f"   Running: pip install -r {req_file}\n")
+            
+            try:
+                # Run pip install in the same Python environment
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "-r", str(req_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=300  # 5 minute timeout
+                )
+                
+                if result.returncode == 0:
+                    print("   ✅ All dependencies installed successfully!\n")
+                    
+                    # Show where packages were installed
+                    site_packages = Path(sys.executable).parent.parent / "Lib" / "site-packages"
+                    if site_packages.exists():
+                        install_location = str(site_packages)
+                        print(f"   📍 Packages installed to: {install_location}\n")
+                    
+                    install_status = "success"
+                    install_message = f"Successfully installed {package_count} package(s)"
+                else:
+                    print(f"   ⚠️  Warning: Some dependencies failed to install")
+                    print(f"   Error output:\n{result.stderr}\n")
+                    install_status = "partial"
+                    install_message = "Some dependencies failed - please install manually"
+                    
+            except subprocess.TimeoutExpired:
+                print("   ⚠️  Installation timeout - please install manually\n")
+                install_status = "timeout"
+                install_message = "Installation timed out after 5 minutes"
+                
+            except Exception as e:
+                print(f"   ⚠️  Could not auto-install dependencies: {e}\n")
+                print(f"   Please run manually: pip install -r {req_file}\n")
+                install_status = "error"
+                install_message = f"Auto-install failed: {str(e)}"
         
         # Reset state
         _requirements_state["active"] = False
+        
+        # Build next steps based on install status
+        next_steps = [
+            "1. ✅ API keys are already set in .env file (no manual update needed!)",
+            "2. Review generated implementations in agent.py",
+        ]
+        
+        # Add install step only if auto-install failed
+        if install_status in ["partial", "timeout", "error"]:
+            next_steps.append(f"3. Install dependencies manually: pip install -r requirements.txt")
+            next_steps.append(f"4. Run 'adk web' and select '{spec['agent_name']}'")
+        else:
+            next_steps.append(f"3. Run 'adk web' and select '{spec['agent_name']}'")
+        
+        # Build files created list
+        files_created = ["__init__.py", "agent.py", ".env"]
+        if _requirements_state["packages"]:
+            files_created.append("requirements.txt")
         
         return {
             "status": "success",
             "message": f"✅ Agent '{spec['agent_name']}' created successfully with OpenAI-generated code!",
             "agent_directory": str(agent_dir),
-            "files_created": ["__init__.py", "agent.py", ".env"] + (["requirements.txt"] if _requirements_state["packages"] else []),
-            "next_steps": [
-                "1. Update API keys in .env file",
-                "2. Review generated implementations in agent.py",
-                "3. Install dependencies: pip install -r requirements.txt (if exists)",
-                f"4. Run 'adk web' and select '{spec['agent_name']}' from dropdown"
-            ]
+            "files_created": files_created,
+            "dependency_install_status": install_status,
+            "dependency_install_message": install_message,
+            "dependency_install_location": install_location,
+            "packages_installed": len(_requirements_state.get("packages", [])),
+            "env_file_ready": bool(_requirements_state.get("env_data")),
+            "next_steps": next_steps
         }
         
     except Exception as e:
@@ -449,7 +568,6 @@ def create_agent_from_requirements() -> dict:
             "status": "error",
             "message": f"Failed to create agent: {str(e)}"
         }
-
 
 def list_created_agents() -> dict:
     """List all agents in the getting_started directory."""

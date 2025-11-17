@@ -1,0 +1,197 @@
+{
+  "receive_fathom_webhook": {
+    "file": "fathom_tools/receive_fathom_webhook.py",
+    "function": "receive_fathom_webhook",
+    "description": "Receives and validates Fathom webhook payload sent directly from Fathom's webhook service. Extracts call_id, timestamp, meeting_title, summary, key_actions, and participants from the webhook data structure.",
+    "required_env": [],
+    "dependencies": []
+  },
+  "process_user_fathom_payload": {
+    "file": "fathom_tools/process_user_fathom_payload.py",
+    "function": "process_user_fathom_payload",
+    "description": "Processes Fathom payload provided manually by a user (via chat, form, or copy-paste). Accepts JSON string and parses it into structured data with meeting_title, things_discussed, key_actions, and participants.",
+    "required_env": [],
+    "dependencies": []
+  },
+  "get_current_time": {
+    "file": "slack_tools/get_current_time.py",
+    "function": "get_current_time",
+    "description": "Gets the current date and time in ISO format (YYYY-MM-DDTHH:MM:SS). Use this to calculate due dates and reminder times.",
+    "required_env": [],
+    "dependencies": [],
+    "parameters": {}
+  },
+  "calculate_future_time": {
+    "file": "slack_tools/calculate_future_time.py",
+    "function": "calculate_future_time",
+    "description": "Calculates a future time by adding minutes to a base time. Returns time in ISO format.",
+    "required_env": [],
+    "dependencies": [],
+    "parameters": {
+      "base_time": {
+        "type": "str",
+        "required": true,
+        "description": "Base time in ISO format (YYYY-MM-DDTHH:MM:SS)"
+      },
+      "add_minutes": {
+        "type": "int",
+        "required": true,
+        "description": "Number of minutes to add"
+      }
+    }
+  },
+  "create_meeting_notes_canvas": {
+    "file": "slack_tools/create_meeting_notes_canvas.py",
+    "function": "create_meeting_notes_canvas",
+    "description": "Creates a structured meeting notes canvas in Slack with sections for meeting title, attendees, things discussed, and action items. Posts canvas to specified channel_id. Accepts JSON array strings for things_discussed and action_items.",
+    "required_env": [
+      "SLACK_BOT_TOKEN"
+    ],
+    "dependencies": [
+      "slack-sdk"
+    ],
+    "parameters": {
+      "channel_id": {
+        "type": "str",
+        "required": true,
+        "description": "Slack channel ID where canvas will be posted"
+      },
+      "meeting_title": {
+        "type": "str",
+        "required": true,
+        "description": "Title of the meeting"
+      },
+      "things_discussed": {
+        "type": "str",
+        "required": true,
+        "description": "JSON array string of discussion points, e.g. '[\"Point 1\", \"Point 2\"]'"
+      },
+      "action_items": {
+        "type": "str",
+        "required": true,
+        "description": "JSON array string of action items, e.g. '[{\"task_title\": \"Task 1\", \"owner_name\": \"John\", \"due_date\": \"2025-03-15\"}]'"
+      },
+      "attendees": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "description": "Comma-separated attendee names (e.g., 'John, Sarah, Mike')"
+      },
+      "meeting_date": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "description": "Meeting date string (e.g., '2024-03-20')"
+      },
+      "additional_notes": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "description": "Additional notes text"
+      }
+    }
+  },
+  "create_task_reminder": {
+    "file": "slack_tools/create_task_reminder.py",
+    "function": "create_task_reminder",
+    "description": "Creates task reminders for multiple users via email before a due date. Automatically adjusts reminder time to 2 minutes from now if calculated time is in the past. Sends scheduled direct messages with task details. Accepts comma-separated email addresses. Requires OAuth scopes: chat:write, users:read.email",
+    "required_env": [
+      "SLACK_BOT_TOKEN"
+    ],
+    "dependencies": [
+      "slack-sdk"
+    ],
+    "parameters": {
+      "user_email": {
+        "type": "str",
+        "required": true,
+        "description": "Comma-separated email addresses (e.g., 'john@company.com, sarah@company.com')"
+      },
+      "task_title": {
+        "type": "str",
+        "required": true,
+        "description": "Title of the task"
+      },
+      "task_description": {
+        "type": "str",
+        "required": true,
+        "description": "Description of the task"
+      },
+      "due_date": {
+        "type": "str",
+        "required": true,
+        "description": "Due date in ISO format (YYYY-MM-DDTHH:MM:SS)"
+      },
+      "reminder_advance_hours": {
+        "type": "int",
+        "required": false,
+        "default": 24,
+        "description": "Hours before due date to send reminder (auto-adjusts to 2 min if past)"
+      }
+    }
+  },
+  "send_scheduled_direct_message": {
+    "file": "slack_tools/send_scheduled_direct_message.py",
+    "function": "send_scheduled_direct_message",
+    "description": "Sends a scheduled direct message to a user by email address. Automatically adjusts to 2 minutes from now if scheduled time is in the past. Accepts scheduled_time in ISO format (YYYY-MM-DDTHH:MM:SS). Requires OAuth scopes: chat:write, users:read.email",
+    "required_env": [
+      "SLACK_BOT_TOKEN"
+    ],
+    "dependencies": [
+      "slack-sdk"
+    ],
+    "parameters": {
+      "user_email": {
+        "type": "str",
+        "required": true,
+        "description": "User's email address"
+      },
+      "message": {
+        "type": "str",
+        "required": true,
+        "description": "Message text to send"
+      },
+      "scheduled_time": {
+        "type": "str",
+        "required": true,
+        "description": "Time to send in ISO format (YYYY-MM-DDTHH:MM:SS)"
+      }
+    }
+  },
+  "get_user_id_from_email": {
+    "file": "slack_tools/get_user_id_from_email.py",
+    "function": "get_user_id_from_email",
+    "description": "Retrieves Slack user ID (e.g., U123ABC) from email address. Requires OAuth scope: users:read.email",
+    "required_env": [
+      "SLACK_BOT_TOKEN"
+    ],
+    "dependencies": [
+      "slack-sdk"
+    ],
+    "parameters": {
+      "email": {
+        "type": "str",
+        "required": true,
+        "description": "Email address of the user"
+      }
+    }
+  },
+  "get_user_by_email": {
+    "file": "slack_tools/get_user_by_email.py",
+    "function": "get_user_by_email",
+    "description": "Looks up a Slack user by email address and returns full user object with id, real_name, and profile details. Requires OAuth scope: users:read.email",
+    "required_env": [
+      "SLACK_BOT_TOKEN"
+    ],
+    "dependencies": [
+      "slack-sdk"
+    ],
+    "parameters": {
+      "email": {
+        "type": "str",
+        "required": true,
+        "description": "Email address of the user"
+      }
+    }
+  }
+}
