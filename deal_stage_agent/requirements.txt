@@ -1,0 +1,4 @@
+google-adk
+hubspot-api-client
+notion-client
+slack-sdk
